@@ -1,4 +1,4 @@
-Multi-User Retrieval-Augmented Generation (RAG) System
+## Multi-User Retrieval-Augmented Generation (RAG) System
 
 A production-grade, multi-user RAG system built with FastAPI, LlamaIndex, Milvus (vector database), and PostgreSQL (metadata store).
 The system supports independent user workspaces, document-level metadata, incremental indexing, and filtered semantic retrieval.
