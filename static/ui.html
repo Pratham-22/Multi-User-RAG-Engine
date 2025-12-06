@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Multi-User RAG Chatbot</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f5f5f5;
+      color: #222;
+    }
+    header {
+      background: #20293c;
+      color: #fff;
+      padding: 12px 20px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 20px;
+    }
+    main {
+      padding: 16px 20px 32px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    section {
+      background: #fff;
+      border-radius: 6px;
+      padding: 16px 18px 18px;
+      margin-bottom: 18px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    h2 {
+      margin-top: 0;
+      font-size: 18px;
+    }
+    h3 {
+      margin: 10px 0 6px;
+      font-size: 15px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+    input[type="text"], textarea, select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 7px 9px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+    textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+    button {
+      padding: 6px 12px;
+      font-size: 14px;
+      border-radius: 4px;
+      border: 1px solid #1f6feb;
+      background: #2f81f7;
+      color: #fff;
+      cursor: pointer;
+    }
+    button[disabled] {
+      opacity: 0.5;
+      cursor: default;
+    }
+    small {
+      font-size: 12px;
+      color: #555;
+    }
+    .row {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .col {
+      flex: 1 1 260px;
+    }
+    .status {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #555;
+      white-space: pre-wrap;
+    }
+    .answer-box {
+      white-space: pre-wrap;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 8px 10px;
+      background: #fafafa;
+      font-size: 14px;
+    }
+    .sources-list {
+      font-size: 13px;
+      margin-top: 6px;
+      padding-left: 16px;
+    }
+    .sources-list li {
+      margin-bottom: 4px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 1px 6px;
+      font-size: 11px;
+      border-radius: 999px;
+      background: #e5e7eb;
+      margin-left: 4px;
+    }
+    .flex-between {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Multi-User RAG Chatbot (LlamaIndex + Milvus + Postgres)</h1>
+  </header>
+
+  <main>
+    <!-- User Management -->
+    <section id="user-section">
+      <div class="flex-between">
+        <h2>1. Users</h2>
+        <small id="active-user-label">Active user: <strong>none</strong></small>
+      </div>
+
+      <div class="row">
+        <!-- Existing users -->
+        <div class="col">
+          <h3>Select existing user</h3>
+          <label for="user-select">Users</label>
+          <select id="user-select"></select>
+          <button id="refresh-users-btn">Refresh users</button>
+          <div class="status" id="user-select-status"></div>
+        </div>
+
+        <!-- Create new user -->
+        <div class="col">
+          <h3>Create new user</h3>
+          <label for="new-username">Username</label>
+          <input type="text" id="new-username" placeholder="e.g. pratham" />
+          <button id="create-user-btn">Create user</button>
+          <div class="status" id="create-user-status"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Document upload & listing -->
+    <section id="doc-section">
+      <h2>2. Documents for active user</h2>
+      <small>Upload PDFs or TXT files. They’ll be stored under data/&lt;user_id&gt;/ and indexed in Milvus.</small>
+
+      <div class="row">
+        <div class="col">
+          <h3>Upload document</h3>
+          <label for="upload-file">File</label>
+          <input type="file" id="upload-file" />
+          <button id="upload-btn">Upload &amp; index</button>
+          <div class="status" id="upload-status"></div>
+        </div>
+
+        <div class="col">
+          <h3>User's documents (Postgres)</h3>
+          <button id="refresh-docs-btn">Refresh list</button>
+          <div class="status" id="docs-status"></div>
+          <ul id="docs-list" class="sources-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Query -->
+    <section id="query-section">
+      <h2>3. Ask a question (RAG)</h2>
+      <label for="question-input">Question</label>
+      <textarea id="question-input" placeholder="Ask something about your uploaded documents..."></textarea>
+      <div>
+        <label>
+          <input type="checkbox" id="include-sources" checked />
+          Include sources
+        </label>
+      </div>
+      <button id="query-btn">Ask</button>
+      <div class="status" id="query-status"></div>
+
+      <h3>Answer</h3>
+      <div id="answer" class="answer-box"></div>
+
+      <h3>Sources</h3>
+      <ul id="sources-list" class="sources-list"></ul>
+    </section>
+  </main>
+
+  <script>
+    // ----------------- Global state -----------------
+    let activeUserId = null;
+    const apiBase = ""; // same origin
+
+    // ----------------- Helpers -----------------
+    function setActiveUserLabel() {
+      const label = document.getElementById("active-user-label");
+      const select = document.getElementById("user-select");
+      if (activeUserId && select.value) {
+        const name = select.options[select.selectedIndex].text;
+        label.innerHTML = `Active user: <strong>${name} (id=${activeUserId})</strong>`;
+      } else {
+        label.innerHTML = "Active user: <strong>none</strong>";
+      }
+    }
+
+    function getJSON(url, options = {}) {
+      return fetch(apiBase + url, {
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        ...options,
+      }).then(async (res) => {
+        const text = await res.text();
+        let data = null;
+        try {
+          data = text ? JSON.parse(text) : null;
+        } catch {
+          data = { detail: text };
+        }
+        if (!res.ok) {
+          const msg = (data && (data.detail || data.error)) || res.statusText;
+          throw new Error(msg);
+        }
+        return data;
+      });
+    }
+
+    function requireActiveUser() {
+      if (!activeUserId) {
+        alert("Please select or create a user first.");
+        return false;
+      }
+      return true;
+    }
+
+    // ----------------- Users -----------------
+    async function loadUsers() {
+      const status = document.getElementById("user-select-status");
+      status.textContent = "Loading users...";
+      try {
+        const users = await getJSON("/users");
+        const select = document.getElementById("user-select");
+        select.innerHTML = "";
+        if (!users || users.length === 0) {
+          const o = document.createElement("option");
+          o.value = "";
+          o.textContent = "No users yet";
+          select.appendChild(o);
+          activeUserId = null;
+        } else {
+          users.forEach((u) => {
+            const o = document.createElement("option");
+            o.value = u.id;
+            o.textContent = `${u.username} (id=${u.id})`;
+            select.appendChild(o);
+          });
+          // restore previous active if possible
+          if (activeUserId) {
+            const found = Array.from(select.options).some(
+              (opt) => String(opt.value) === String(activeUserId)
+            );
+            select.value = found ? String(activeUserId) : select.options[0].value;
+          } else {
+            select.value = select.options[0].value;
+          }
+          activeUserId = select.value ? parseInt(select.value) : null;
+        }
+        setActiveUserLabel();
+        status.textContent = "Loaded.";
+      } catch (err) {
+        status.textContent = "Error: " + err.message;
+      }
+    }
+
+    async function createUser() {
+      const input = document.getElementById("new-username");
+      const status = document.getElementById("create-user-status");
+      const username = input.value.trim();
+      if (!username) {
+        status.textContent = "Username cannot be empty.";
+        return;
+      }
+      status.textContent = "Creating user...";
+      try {
+        const user = await getJSON("/users", {
+          method: "POST",
+          body: JSON.stringify({ username }),
+        });
+        status.textContent = `Created user id=${user.id}.`;
+        input.value = "";
+        await loadUsers();
+        activeUserId = user.id;
+        const select = document.getElementById("user-select");
+        select.value = String(activeUserId);
+        setActiveUserLabel();
+      } catch (err) {
+        status.textContent = "Error: " + err.message;
+      }
+    }
+
+    // ----------------- Documents -----------------
+    async function refreshUserDocuments() {
+      if (!requireActiveUser()) return;
+      const status = document.getElementById("docs-status");
+      const list = document.getElementById("docs-list");
+      status.textContent = "Loading documents...";
+      list.innerHTML = "";
+      try {
+        const docs = await getJSON(`/users/${activeUserId}/db-documents`);
+        if (!docs || docs.length === 0) {
+          status.textContent = "No documents for this user.";
+          return;
+        }
+        status.textContent = `Found ${docs.length} document(s).`;
+        docs.forEach((d) => {
+          const li = document.createElement("li");
+          li.textContent = d.filename;
+          if (d.embedded) {
+            const b = document.createElement("span");
+            b.className = "badge";
+            b.textContent = "embedded";
+            li.appendChild(b);
+          } else {
+            const b = document.createElement("span");
+            b.className = "badge";
+            b.textContent = "not embedded";
+            li.appendChild(b);
+          }
+          list.appendChild(li);
+        });
+      } catch (err) {
+        status.textContent = "Error: " + err.message;
+      }
+    }
+
+    async function uploadDocument() {
+      if (!requireActiveUser()) return;
+      const fileInput = document.getElementById("upload-file");
+      const status = document.getElementById("upload-status");
+      const file = fileInput.files[0];
+      if (!file) {
+        status.textContent = "Please choose a file.";
+        return;
+      }
+      status.textContent = "Uploading and indexing...";
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch(`/users/${activeUserId}/upload-document`, {
+          method: "POST",
+          body: formData,
+        });
+        const text = await res.text();
+        let data;
+        try {
+          data = text ? JSON.parse(text) : null;
+        } catch {
+          data = { detail: text };
+        }
+        if (!res.ok) {
+          const msg = (data && (data.detail || data.error)) || res.statusText;
+          throw new Error(msg);
+        }
+        status.textContent = "Upload + index complete.";
+        fileInput.value = "";
+        await refreshUserDocuments();
+      } catch (err) {
+        status.textContent = "Error: " + err.message;
+      }
+    }
+
+    // ----------------- Query -----------------
+    async function sendQuery() {
+      if (!requireActiveUser()) return;
+      const qInput = document.getElementById("question-input");
+      const status = document.getElementById("query-status");
+      const answerBox = document.getElementById("answer");
+      const sourcesList = document.getElementById("sources-list");
+      const includeSources = document.getElementById("include-sources").checked;
+
+      const question = qInput.value.trim();
+      if (!question) {
+        status.textContent = "Please enter a question.";
+        return;
+      }
+
+      status.textContent = "Querying...";
+      answerBox.textContent = "";
+      sourcesList.innerHTML = "";
+
+      try {
+        const result = await getJSON(`/users/${activeUserId}/query`, {
+          method: "POST",
+          body: JSON.stringify({
+            question,
+            include_sources: includeSources,
+          }),
+        });
+        answerBox.textContent = result.answer || "";
+        if (includeSources && result.sources) {
+          result.sources.forEach((s) => {
+            const li = document.createElement("li");
+            li.innerHTML =
+              `<strong>${s.source || "Unknown"}</strong>` +
+              (s.score != null ? ` (score: ${s.score.toFixed(4)})` : "") +
+              `<br/><span>${s.text}</span>`;
+            sourcesList.appendChild(li);
+          });
+        }
+        status.textContent = "Done.";
+      } catch (err) {
+        status.textContent = "Error: " + err.message;
+      }
+    }
+
+    // ----------------- Event wiring -----------------
+    document.addEventListener("DOMContentLoaded", () => {
+      document
+        .getElementById("refresh-users-btn")
+        .addEventListener("click", loadUsers);
+      document
+        .getElementById("create-user-btn")
+        .addEventListener("click", createUser);
+      document
+        .getElementById("user-select")
+        .addEventListener("change", () => {
+          const select = document.getElementById("user-select");
+          activeUserId = select.value ? parseInt(select.value) : null;
+          setActiveUserLabel();
+        });
+      document
+        .getElementById("upload-btn")
+        .addEventListener("click", uploadDocument);
+      document
+        .getElementById("refresh-docs-btn")
+        .addEventListener("click", refreshUserDocuments);
+      document
+        .getElementById("query-btn")
+        .addEventListener("click", sendQuery);
+
+      // Initial load
+      loadUsers();
+    });
+  </script>
+</body>
+</html>
