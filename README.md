@@ -6,7 +6,8 @@ Ideal for personal AI assistants, knowledge-base agents, enterprise RAG, and res
 
 ⸻
 
-Key Features
+## Key Features
+
 	•	Multi-user architecture with isolated document stores
 	•	Metadata-enriched embeddings stored in Milvus / Milvus Lite
 	•	PostgreSQL-backed document catalog, tracking user ownership and embedding status
@@ -18,9 +19,10 @@ Key Features
 
 ⸻
 
-System Architecture
+## System Architecture
 
-flowchart TD
+### flowchart TD
+
     UI[Web UI] --> API[FastAPI Backend]
     API --> Users[User Management]
     API --> Docs[Document Upload]
@@ -39,9 +41,10 @@ flowchart TD
 
 ⸻
 
-Technology Stack
+## Technology Stack
 
-Backend
+### Backend
+
 	•	FastAPI
 	•	Python 3.10
 	•	LlamaIndex (VectorStoreIndex, metadata filters)
@@ -49,23 +52,26 @@ Backend
 	•	HuggingFace Embeddings
 	•	HuggingFace LLM inference
 
-Database Layer
+### Database Layer
+
 	•	PostgreSQL
 	•	SQLAlchemy ORM
 	•	session-based user isolation
 
-Vector Search
+### Vector Search
+
 	•	Milvus Vector Database
 	•	Metadata filters: user_id, doc_id
 	•	Persistent index storage via LlamaIndex
 
 ⸻
 
-Core Concepts
+### Core Concepts
 
-1. User-Level Isolation
+## 1. User-Level Isolation
 
 Each user gets:
+
 	•	Their own upload directory: data/<user_id>/
 	•	Metadata saved in PostgreSQL
 	•	Vector embeddings filtered by metadata:
@@ -75,104 +81,102 @@ No user can retrieve another user’s documents.
 
 ⸻
 
-2. Document Lifecycle
+## 2. Document Lifecycle
 
-Step	Action	Stored In
-Upload	File saved under user folder	File System
-Metadata	filename, user_id, embedded flag	PostgreSQL
-Embedding	Extract text → vectorize → store	Milvus
-Retrieval	Filter by user metadata	Milvus + LlamaIndex
+
+| Step        | Action                                | Stored In            |
+|-------------|----------------------------------------|-----------------------|
+| Upload      | File saved under user's folder         | File System          |
+| Metadata    | filename, user_id, embedded flag       | PostgreSQL           |
+| Embedding   | Extract → vectorize → store vectors    | Milvus Vector Store  |
+| Retrieval   | Filter by user metadata (user_id)      | Milvus + LlamaIndex  |
 
 
 ⸻
 
-Project Structure
 
+## Project Structure
+
+```
 final_chatbot/
 │
-├── api.py                # FastAPI app with all endpoints
-├── rag_engine.py         # Multi-user RAG engine
-├── db.py                 # PostgreSQL connection + session helper
-├── models.py             # SQLAlchemy models (User, DocumentRecord)
-├── config.py             # Configuration (paths, Milvus, LLM, embeddings)
+├── api.py            # FastAPI endpoints (users, upload, query)
+├── rag_engine.py     # Multi-user RAG engine (Milvus + LlamaIndex)
+├── db.py             # PostgreSQL connection + session helper
+├── models.py         # SQLAlchemy models (User, DocumentRecord)
+├── config.py         # Configuration (paths, Milvus, LLM, embeddings)
 │
 ├── static/
-│   └── ui.html           # Simple multi-user interface
+│   └── ui.html       # Multi-user UI
 │
-├── data/                 # Auto-created user folders and uploaded files
-├── storage/              # LlamaIndex persistence (vector + docstore)
-├── milvus/               # Milvus Lite local database
+├── data/             # Auto-created user folders + uploaded documents
 │
-└── requirements.txt
+├── storage/          # LlamaIndex persistence (vector_store + docstore)
+│
+├── milvus/           # Milvus Lite vector database
+│
+└── requirements.txt  # Python dependencies
+```
 
 
 ⸻
 
-API Endpoints
+## API Endpoints
 
-Users
-
-POST   /users                 # Create new user
-GET    /users                 # List all users
-
-Document Handling
-
-POST   /users/{user_id}/upload-document
-GET    /users/{user_id}/db-documents
-GET    /users/{user_id}/vector-sources
-
-Query
-
-POST   /users/{user_id}/query
-
-Debug
-
-GET    /data-files
-GET    /health
+| Endpoint                               | Method | Description                                      |
+|----------------------------------------|--------|--------------------------------------------------|
+| /users                                 | POST   | Create a new user                                |
+| /users                                 | GET    | List all users                                   |
+| /users/{user_id}/upload-document       | POST   | Upload a TXT/PDF document for a specific user    |
+| /users/{user_id}/db-documents          | GET    | List all documents stored in Postgres for user   |
+| /users/{user_id}/vector-sources        | GET    | List all embedded document sources for user      |
+| /users/{user_id}/query                 | POST   | Run a RAG query scoped to a single user          |
+| /data-files                            | GET    | List all files in the filesystem                 |
+| /health                                | GET    | Health check                                     |
 
 
 ⸻
 
-Setup Instructions
+## Setup Instructions
 
 1. Clone Repository
-
+```
 git clone <repo-url>
 cd final_chatbot
-
+```
 2. Install Dependencies
-
+```
 pip install -r requirements.txt
-
+```
 3. Set Up PostgreSQL
-
+```
 Create user and database:
 
 CREATE USER raguser WITH PASSWORD 'ragpassword';
 CREATE DATABASE ragdb OWNER raguser;
-
+```
 4. SSH Port Forwarding (if on HPC)
 
 Backend:
-
-ssh -L 8001:localhost:8000 <username>@osc.edu
-
+```
+ssh -L 8001:localhost:8000 <username>@hpc
+```
 PostgreSQL:
-
-ssh -R 5432:localhost:5432 <username>@osc.edu
-
+```
+ssh -R 5432:localhost:5432 <username>@hpc
+```
 5. Start Backend
-
+```
 uvicorn api:app --host 0.0.0.0 --port 8000
-
+```
 6. Open UI
-
+```
 http://localhost:8001
-
+```
 
 ⸻
 
-Milvus Metadata Strategy
+## Milvus Metadata Strategy
 
 Each document is embedded with:
 
@@ -190,7 +194,8 @@ ExactMatchFilter(key="user_id", value="<id>")
 
 ⸻
 
-Why This Architecture?
+### Why This Architecture?
+
 	•	Prevents cross-user data leakage
 	•	Allows incremental indexing (only new files are embedded)
 	•	Ensures efficient retrieval at scale
@@ -199,7 +204,8 @@ Why This Architecture?
 
 ⸻
 
-Future Enhancements
+### Future Enhancements
+
 	•	JWT-based authentication
 	•	Multi-tenant UI
 	•	Docker Compose setup (FastAPI + Postgres + Milvus)
